@@ -1,0 +1,357 @@
+#!/usr/bin/perl -w
+#
+#  PMS v1.2	(Perl Mail Sorter)
+#  Copyright (C) 2000  Nick Jennings
+#
+#  This program is free software; you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation; version 2 of the License. 
+#
+#  This program is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with this program; if not, write to the Free Software
+#  Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307 USA
+#
+#  This program is developed and maintained by Nick Jennings.
+# Contact Information:
+#
+#    Nick Jennings                 nick@namodn.com
+#    PMB 377                       http://nick.namodn.com
+#    4096 Piedmont Ave.
+#    Oakland, CA 94611
+#
+#  PMS homepage : http://www.communityprojects.org/apps/pms/
+#
+##############################################################################
+
+use strict;
+use Mail::Header;
+
+##############################################################################
+## system specific configuration
+##############################################################################
+
+my $spool = '/var/spool/mail/';   # system spool directory
+my $domain = 'namodn.com';
+
+##############################################################################
+
+
+
+##############################################################################
+##############################################################################
+# internal pms settings, dont change
+my $version = '1.2';
+my $pmsrc = ".pmsrc";             # user config file
+my $logfile = ".pms-log";         # user logfile
+my $user = &get_user();
+my $syntax_check = 0;
+if ((@ARGV) && ($ARGV[0] eq '-rc')) {
+	my @entries = ();
+	$syntax_check = 1;
+	if ($ARGV[1]) {
+	        my $file = $ARGV[1];
+		unless (-f $file) {
+			print STDERR "rc file: $file, does not exist.\n";
+			exit 1;
+		}
+		@entries = load_rc($file);
+	}
+	else {
+		@entries = load_rc();
+	}
+	print_config(@entries);  # debug purposes
+	exit 0;
+	
+}
+elsif ((@ARGV) && ($ARGV[0] eq '--help')) {
+	print "usage: pms [options <file>]\n";
+	print "\n";
+	print " PMS runs with no parameters, the only command line options\n";
+	print " available are stricly for syntax checking of the .pmsrc\n";
+	print " file.\n";
+	print "\n";
+	print "   Syntax Checking: pms -rc <file>\n";
+	print "\n";
+	print "   Note: leaving out the <file> name defaults to the users\n";
+	print "         .pmsrc in their home directory.\n";
+	print "\n";
+	exit 0;
+}
+
+my @mesg = <STDIN>;               # Full Message
+
+sub main {
+	my @entries = load_rc();
+	my $hobj = new Mail::Header \@mesg;     # Header Object
+	
+	# getting body of message
+	my $b = 0;
+	my @body;
+	foreach my $line (@mesg) {
+		if ($b) {
+			unshift @body, $line;
+		}
+		elsif ($line =~ /^\s*$/) {
+			$b = 1;
+		}
+	}
+	unless (@body) {
+		clean_exit( 
+		  log_mesg => "no message body found, wrote to default spool",
+		  mesg => \@mesg,
+		);
+	}
+
+	# perform search on message
+	foreach my $entry (@entries) {
+		if ($entry->{'location'} eq 'B') {
+			# message body search
+			if (search_body($entry->{'pattern'}, @body)) {
+				write_to_spool($entry->{'mailbox'}, @mesg);
+				exit;
+			}	
+		}
+		elsif ($entry->{'location'} eq 'H') {
+			# header search
+			if (search_headers($entry->{'pattern'}, 
+					$entry->{'header'}, $hobj)) {
+				write_to_spool($entry->{'mailbox'}, @mesg);
+				exit;
+			}	
+		}
+	}
+
+	# no patterns matched writing to default spool
+	log_mesg("no match, writing to default spool");
+	write_to_spool("$spool/$user", @mesg);
+	exit 0;
+}
+
+sub search_body {
+	my $pattern = shift;
+	my @body = @_;
+	my $match = 0;
+
+	foreach my $line (@body) {
+		if ($line =~ /$pattern/) { 
+			log_mesg("$pattern found in message body");
+			$match = 1; 
+		}
+	}
+	return $match;
+}
+
+sub search_headers {
+	my ($pattern, $header, $hobj) = @_;
+	my $match = 0;
+	my $header_contents = $hobj->get("$header");
+
+	if ($header_contents) {
+		if ($header_contents =~ /$pattern/) { 
+			log_mesg("$header: $pattern found in $header: $header_contents");
+			$match = 1; 
+		}
+	}
+	else { $match = 0; }
+	return $match;
+}
+
+sub write_to_spool {
+	my $mailbox = shift;
+	my @mesg = @_;
+
+	if (! -f $mailbox) { system('touch', $mailbox); }
+	open (FH, ">>$mailbox") or log_fatal("failed to open $mailbox : $!");
+	flock (FH, 2) or log_fatal("failed to lock $mailbox : $!");
+	print FH @mesg;
+	print FH "\n";
+	flock (FH, 8) or 
+		log_fatal("failed to unlock $mailbox : $!");
+	close FH;
+}
+
+sub print_config {
+	my @entries = @_;
+	my $en = 0; #entry num
+
+	foreach my $entry (@entries) {
+		$en++;
+		print "\n";
+		if ($entry->{'location'} eq 'H') {
+			print "$en: In Header '", $entry->{'header'}, "'\n";
+		}
+		else {
+			print "$en: ", $entry->{'location'}, "\n";
+		}
+		print "$en: Find '", $entry->{'pattern'}, "'\n";
+		print "$en: Place Message in '", $entry->{'mailbox'}, "'\n";
+	}
+	print "\n";
+	print "$en entries read.\n";
+}
+
+sub load_rc {
+	$pmsrc = shift || $pmsrc;
+	my $entry = '0';    # checks for valid sqeuence of entries
+	my $ln = 0;         # current line number
+	my @entry_list;     # list of entries in rc (hasref list)
+	my %conf;
+
+	open (FH, "<$pmsrc") or 
+		clean_exit( log_mesg => "failed to open $pmsrc : $!",
+	                    mesg => \@mesg,
+		);
+	while (<FH>) {
+	        $ln++;
+		if (/^#/) { next; }
+		if (/^$/) { next; }
+
+
+		if (/^:\$$/) {
+			if ($entry != '0') { 
+				clean_exit( 
+				    log_mesg => "error in $pmsrc line: $ln",
+	                    	    mesg => \@mesg,
+				);
+			}
+			$entry = '1';
+			next;
+		}
+ 
+		if ($entry == '1') {
+			my ($where, $what) = split ('=', $_);
+			chomp($what);
+			if (($where) && ($what)) {
+				$conf{'pattern'} = $what;
+				if ($where =~ /^B/) {
+					$conf{'location'} = 'B';
+				}
+				elsif ($where =~ /^H,/) {
+					$conf{'location'} = 'H';
+					my ($junk, $header) = 
+						split(/,/, $where, 2);
+					$conf{'header'} = $header;
+				}
+				else {
+					clean_exit( 
+					log_mesg => "error in $pmsrc line: $ln",
+	                    		mesg => \@mesg,
+					);
+				}
+			}
+			else {
+				clean_exit( 
+				    log_mesg => "error in $pmsrc line: $ln",
+	                    	    mesg => \@mesg,
+				);
+			}
+			$entry = '2';
+			next;
+		}
+ 
+		if ($entry == '2') {
+			chomp($_);
+			$conf{'mailbox'} = $_;
+			my $confref = { %conf };
+			$entry_list[$#entry_list + 1] = $confref;
+			$entry = '0';
+			undef %conf;
+			next;
+		}
+	}
+	close FH;
+
+	if ($entry != '0') { 
+		clean_exit( 
+		    log_mesg => "error in $pmsrc near the end of the file", 
+                    mesg => \@mesg,
+		);
+	}
+
+	unless (@entry_list) {
+		clean_exit( 
+		    log_mesg => "$pmsrc contains no data, nothing to do",
+                    mesg => \@mesg,
+		);
+	}
+
+	return (@entry_list);
+}
+
+sub get_user {
+	my @tmp = split(/\//, `/bin/pwd`);
+	my $user = $tmp[$#tmp];
+	chomp $user;
+	return $user;
+}
+
+sub log_mesg {
+	my $error = shift;
+	my $date = `/bin/date`;
+	chomp($date, $error);
+	open(LOG, ">>$logfile") or 
+		clean_exit( 
+		    log_mesg => "error opening $logfile : $!",
+                    mesg => \@mesg,
+		);
+	print LOG "$date: [MESG ] $error\n";	
+	close LOG;
+}
+
+sub log_fatal {
+	my $error = shift;
+	my $date = `/bin/date`;
+	chomp($date, $error);
+	open(LOG, ">>$logfile") or 
+		exit 0; # pms: error opening $logfile : $!
+	print LOG "$date: [FATAL] $error\n";	
+	close LOG;
+	print STDERR "$date: [FATAL] $error\n";	
+	exit 0;
+}
+
+sub clean_exit {
+	my %args = @_;
+	my $log_mesg = $args{'log_mesg'};
+	my @mesg = @{$args{'mesg'}};
+	
+	if ($syntax_check) {
+		write_to_spool("$spool/$user", @mesg);
+		notify_user($log_mesg);
+	}
+	log_fatal($log_mesg);
+}
+
+sub notify_user {
+	my $log_mesg = shift;
+	my $date = `date`;
+	chomp $date;
+
+	open (MAIL, ">>$spool/$user") or return 0; 
+	flock (MAIL, 2) or return 0;
+	print MAIL "From PMS $date\n";
+	print MAIL "Date: $date\n";
+	print MAIL "From: pms\@$domain\n";
+	print MAIL "To: $user\@$domain\n";
+	print MAIL "Subject: your .pmsrc is bad\n";
+	print MAIL "Lines: 10\n"; 
+	print MAIL "\n";
+	print MAIL " PMS encountered the following errors in your .pmsrc\n";
+	print MAIL "\n";
+	print MAIL " >  $log_mesg\n";
+	print MAIL "\n";
+	print MAIL " The original email has been written to your spoolfile\n";
+	print MAIL "\n";
+	print MAIL "Sincerely,\n";
+	print MAIL "   Perl Mail Sorter - v$version\n";
+	print MAIL "\n";
+	flock (MAIL, 8) or return 0; 
+	close MAIL;
+}
+
+&main();
