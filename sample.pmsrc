@@ -1,0 +1,26 @@
+# PMS (Perl Mail Sorter) Config File
+#
+# ---------------------------------------------------------------------------
+# syntax: :$
+#	  <H|B><,value| >='<value>'
+#	  <path & filename to append message to>
+# ---------------------------------------------------------------------------
+#
+# :$		= Begin new chunk
+# <H|B>		= look in 'H'eader or 'B'ody
+# <,value| >	= if 'H'eader then ',<value>' is the header name.
+#		  if 'B'ody then no value (i.e. B = '<value>')
+#
+# --------------------------------------------------------------------------
+#
+#	Special keys (i.e. don't use except for where specified): =
+#
+# examples:
+# :$
+# H,From='mygirlfriend@host.com'
+# /home/nick/mail/gf-mail
+#
+# :$
+# B='FREE'
+# /dev/null
+#
