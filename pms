@@ -1,6 +1,6 @@
 #!/usr/bin/perl -w
 #
-#  PMS v1.2	(Perl Mail Sorter)
+#  PMS v1.2.0	(Perl Mail Sorter)
 #  Copyright (C) 2000  Nick Jennings
 #
 #  This program is free software; you can redistribute it and/or modify
@@ -35,7 +35,7 @@ use Mail::Header;
 ## system specific configuration
 ##############################################################################
 
-my $spool = '/var/spool/mail/';   # system spool directory
+my $spool = '/var/spool/mail';   # system spool directory
 my $domain = 'namodn.com';
 
 ##############################################################################
@@ -45,14 +45,17 @@ my $domain = 'namodn.com';
 ##############################################################################
 ##############################################################################
 # internal pms settings, dont change
-my $version = '1.2';
+my $version = '1.2.0';
 my $pmsrc = ".pmsrc";             # user config file
 my $logfile = ".pms-log";         # user logfile
-my $user = &get_user();
-my $syntax_check = 0;
+my $syntax_check = 0;		  # true if user is running a syntax check
+my $user = '';
+
 if ((@ARGV) && ($ARGV[0] eq '-rc')) {
 	my @entries = ();
 	$syntax_check = 1;
+        $user = &get_user();
+	$pmsrc = "$ENV{'HOME'}/$pmsrc";
 	if ($ARGV[1]) {
 	        my $file = $ARGV[1];
 		unless (-f $file) {
@@ -86,6 +89,7 @@ elsif ((@ARGV) && ($ARGV[0] eq '--help')) {
 my @mesg = <STDIN>;               # Full Message
 
 sub main {
+        $user = &get_user();
 	my @entries = load_rc();
 	my $hobj = new Mail::Header \@mesg;     # Header Object
 	
@@ -178,6 +182,7 @@ sub write_to_spool {
 sub print_config {
 	my @entries = @_;
 	my $en = 0; #entry num
+	my @error_entry = ();
 
 	foreach my $entry (@entries) {
 		$en++;
@@ -185,14 +190,24 @@ sub print_config {
 		if ($entry->{'location'} eq 'H') {
 			print "$en: In Header '", $entry->{'header'}, "'\n";
 		}
+		elsif ($entry->{'location'} eq 'B') {
+			print "$en: In Body\n";
+		}
 		else {
-			print "$en: ", $entry->{'location'}, "\n";
+			push @error_entry, $en;
+			print "$en: ", $entry->{'location'}, " - (unrecognized location)\n";
 		}
 		print "$en: Find '", $entry->{'pattern'}, "'\n";
 		print "$en: Place Message in '", $entry->{'mailbox'}, "'\n";
 	}
 	print "\n";
 	print "$en entries read.\n";
+	if (@error_entry) {
+		print "Problems found in entry: ", join(' ', @error_entry), "\n";
+	}
+	else {
+		print "No errors detected.\n";
+	}
 }
 
 sub load_rc {
@@ -274,10 +289,16 @@ sub load_rc {
 	}
 
 	unless (@entry_list) {
-		clean_exit( 
-		    log_mesg => "$pmsrc contains no data, nothing to do",
-                    mesg => \@mesg,
-		);
+		if (! $syntax_check) {
+			# no entries in rc file, nothing to do, writing to
+			# spool (if this isn't a syntax check) and silently 
+			# exiting.
+			write_to_spool("$spool/$user", @mesg);
+		}
+		else {
+			print "Specified rc file contains no data.\n";
+		}
+		exit 0;
 	}
 
 	return (@entry_list);
@@ -285,12 +306,23 @@ sub load_rc {
 
 sub get_user {
 	my @tmp = split(/\//, `/bin/pwd`);
-	my $user = $tmp[$#tmp];
-	chomp $user;
-	return $user;
+        my $u = '';
+	if ($syntax_check) {
+		$u = $ENV{'USER'};
+	}
+	else {
+		$u = $tmp[$#tmp];
+	}
+	chomp $u;
+	unless ($u) {
+		print STDERR "Unable to determin username\n";
+		exit 1;
+	}
+	return $u;
 }
 
 sub log_mesg {
+	return if ($syntax_check);
 	my $error = shift;
 	my $date = `/bin/date`;
 	chomp($date, $error);
@@ -301,17 +333,22 @@ sub log_mesg {
 		);
 	print LOG "$date: [MESG ] $error\n";	
 	close LOG;
+	return;
 }
 
 sub log_fatal {
 	my $error = shift;
 	my $date = `/bin/date`;
 	chomp($date, $error);
+	print STDERR "$date: [FATAL] $error\n";	
+
+	exit 0 if ($syntax_check); # don't worry about it if this is just
+	                           # a syntax check, STDERR is good enough
+
 	open(LOG, ">>$logfile") or 
 		exit 0; # pms: error opening $logfile : $!
 	print LOG "$date: [FATAL] $error\n";	
 	close LOG;
-	print STDERR "$date: [FATAL] $error\n";	
 	exit 0;
 }
 
@@ -320,7 +357,7 @@ sub clean_exit {
 	my $log_mesg = $args{'log_mesg'};
 	my @mesg = @{$args{'mesg'}};
 	
-	if ($syntax_check) {
+	unless ($syntax_check) {
 		write_to_spool("$spool/$user", @mesg);
 		notify_user($log_mesg);
 	}
@@ -329,7 +366,7 @@ sub clean_exit {
 
 sub notify_user {
 	my $log_mesg = shift;
-	my $date = `date`;
+	my $date = `/bin/date`;
 	chomp $date;
 
 	open (MAIL, ">>$spool/$user") or return 0; 

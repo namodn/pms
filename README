@@ -1,7 +1,7 @@
-PMS - (Perl Mail Sorter) - v1.0.0
+PMS - (Perl Mail Sorter) - v1.2.0
 
 By Nick Jennings : nick@namodn.com
-   PMS Homepage : http://www.communityprojects.org/linux/projects/pms/
+   PMS Homepage : http://www.communityprojects.org/apps/pms/
 
 ------------------------------------------------------------------------------
 
@@ -23,90 +23,79 @@ Installation:
 	There isn't much to installing PMS, though I figure'd I go over some
    information that might be usefull.
 
-	Typically, the pms executable should go in /usr/local/bin, however
-   if sendmail is set up secure, there might be a specified directory that
-   sendmail is allowed to run programs from, and no other directory. The
+	Typically, the pms executable should go in /usr/local/sbin, however
+   if your MTA is set up extra secure, there might be a specified directory 
+   that it is allowed to run programs from, and no other directory. The
    directory is usually something like /etc/smrsh/ or /usr/lib/sm.bin/ 
-   depending on your distro & configuration. If this is the case you will 
+   depending on your distro & MTA configuration. If this is the case you will 
    need to either put pms in this directory, or just make a symlink from 
-   /usr/local/bin/pms to the sendmail secure directory (recomended).
+   /usr/local/sbin/pms to the sendmail secure directory (recomended).
 
 	You will need to make a .pmsrc in your home directory, a sample rc
    file should be included in this tar file, it's called sample.pmsrc. You
    should make a copy of this, name it .pmsrc and set up your filtering rules.
    When you are sure everything is correct in the config file, and it is in
-   your home directory named .pmsrc, edit your .forward and put in the
-   following: 
+   your home directory named .pmsrc, run the following command:
+   
+	$ pms -rc
 
-	"| /usr/local/bin/pms"
+	This should run through your $HOME/.pmsrc and let you know of any
+   syntax erros. If all is well edit your .forward and put in the following: 
 
-	If your sendmail is set up how I mentioned in the above paragraph,
-   then you should replace /usr/local/bin with the path to your sendmail secure
+	"| /usr/local/sbin/pms"
+
+	If your MTA is set up how I mentioned in the above paragraph,
+   then you should replace /usr/local/sbin with the path to your MTA's secure
    directory.
 
 	Now all incoming mail gets piped through pms which reads your .pmsrc
    and attempts to match the patterns as you specify, if it makes a match, it
    will put the email message in the file you specified.
 
-	With the release of v1.0 I plan on making a man page for pms, in
-   which case this document will be it.	Untill then, you might wanna hang on
-   to this file untill you are familiar with pms.
-
-	If the filtering does not appear to be working, you might want to
-   try the debug feature, which is documented in the next section.
 
 ==============================================================================
 
 Command Line Parameters:
 
-	PMS is emant to be run from the .forward, and so there are few
-   command line options. Here are the ones currently used:
+	PMS runs with no parameters, the only command line options
+    available are stricly for syntax checking of the .pmsrc file.
 
-	-d <number: 1|2>	(Activate debuging and set the debug level)
+	Syntax Checking: pms -rc <file>
 
-	This parameter tells PMS to start logging debug messages into the
-   $debug_file which is specified in the pms executible. A global config file
-   is planned for the major release of v1.0. If you do not specify a number,
-   which indicates the debug level, it defaults to 1.
+	Note: leaving out the <file> name defaults to the users
+	      .pmsrc in their home directory.
 
-        Debug level 1 explains major steps in the program. What it's doing, 
-   looking for, patterns it found and didn't find, etc. It writes this info 
-   into $debug_file (Default: ~/.pms-debug).
-   
-        Debug level 2 does all that level 1 does, with more detail, and it 
-   writes the message it gets to $debug_mesgs (Default: ~/.pms-debug-mesgs), 
-   so you have a better chance at not missing mail if there was to be some 
-   bug that shows up.
+    (and of course: 'pms --help' will display this help screen)
 
 =============================================================================
 
 
 RC File:  ~/.pmsrc
 
-	 syntax:  :$
-		  <H|B><,value| >='<value>'
-		  <path & filename to append message to>
-    ------------------------------------------------------------------------
+   #	 syntax:  :$
+   #		  <H|B><,value| >='<value>'
+   #		  <path & filename to append message to>
+   # ------------------------------------------------------------------------
+   #
+   # :$			= Begin new chunk (manditory)
+   # <H|B>		= look in 'H'eader or 'B'ody
+   # <,value| >		= if 'H'eader then ',<value>' is the header name.
+   #		  	  if 'B'ody then no value (i.e. B = '<value>')
+   #
+   # -----------------------------------------------------------------------
+   #
+   # NOTE: Special keys (i.e. don't use except for where specified): =
+   #
+   #
+   # EXAMPLES:
 
-    :$			= Begin new chunk (manditory)
-    <H|B>		= look in 'H'eader or 'B'ody
-    <,value| >		= if 'H'eader then ',<value>' is the header name.
-		  	  if 'B'ody then no value (i.e. B = '<value>')
+    :$
+    H,From='mygirlfriend@host.com'
+    /home/nick/mail/gf-mail
 
-    -----------------------------------------------------------------------
-
-     NOTE: Special keys (i.e. don't use except for where specified): =
-
-
-     EXAMPLES:
-
-      :$
-      H,From='mygirlfriend@host.com'
-      /home/nick/mail/gf-mail
-
-      :$
-      B='FREE'
-      /dev/null
+    :$
+    B='FREE'
+    /dev/null
 
 ==============================================================================
 --

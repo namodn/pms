@@ -1,4 +1,42 @@
- PMS change log
+ PMS changelog 
+
+
+  version 1.2.0
+ +++++++++++++++
+
+  * major internal re-workings & code design (much more stable)
+
+  * .pmsrc syntax checking (with the command: pms -rc)
+
+  * handles errors in filtering *much* more gracefully, 99% chance you
+    won't loose messages, even if you screw up your .pmsrc
+
+  * PMS now writes to your mail spool when it has trouble filtering a
+    message. Much better than silently barfing.
+    
+  * Several minor bugfixes 
+
+  
+
+  version 1.0.0
+ +++++++++++++++
+
+  * implemented file locking.
+
+  * cleaned up code, more modularized.
+
+
+
+  version 0.8.2
+ +++++++++++++++
+
+ * re-arranged debug levels. level 1 now doesn't spit out as much info, and
+   level 2 takes on some of what level 1 used to do.
+
+ * cleaned up debug output, looks nicer.
+
+ * cleaned up some code.
+
 
 
   version 0.8.1 
@@ -14,23 +52,4 @@
  * RC file (~/.pmsrc)
  
  
-
-  version 0.8.2
- +++++++++++++++
-
- * re-arranged debug levels. level 1 now doesn't spit out as much info, and
-   level 2 takes on some of what level 1 used to do.
-
- * cleaned up debug output, looks nicer.
-
- * cleaned up some code.
-
-
-
-  version 1.0.0
- +++++++++++++++
-
-  * implemented file locking.
-
-  * cleaned up code, more modularized.
 
